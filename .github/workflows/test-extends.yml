@@ -1,0 +1,33 @@
+name: Test _extends cross-repo config fetch
+
+# Manual, isolated test — not part of the real POC pipeline. Verifies
+# whether release-drafter's `_extends` mechanism can fetch a file's
+# content from a private cross-org repo (Sonos-Inc/platform-core) given
+# a token that has read access to it, since a default same-repo
+# GITHUB_TOKEN cannot (confirmed separately: platform-core is private).
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  test-extends:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run release-drafter against the _extends test config
+        id: rd
+        continue-on-error: true
+        uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9 # v7.7.0, same pin used in production
+        with:
+          config-name: release-drafter-extends-test.yml
+          disable-releaser: true
+          disable-autolabeler: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.CROSS_REPO_TOKEN }}
+
+      - name: Report outcome
+        run: |
+          echo "release-drafter step outcome: ${{ steps.rd.outcome }}"
