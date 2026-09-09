@@ -1,0 +1,36 @@
+name: Test uncategorized-PR fallback
+
+# Manual, isolated test. Runs release-drafter in dry-run mode against the
+# canonical design's exact category list to see where a merged PR with no
+# matching label (e.g. PR #10, which has zero labels) lands in the output.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run release-drafter (dry-run)
+        id: rd
+        uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9 # v7.7.0
+        with:
+          config-name: release-drafter-category-test.yml
+          dry-run: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Print rendered body
+        run: |
+          echo "----- BODY START -----"
+          cat << 'BODYEOF'
+          ${{ steps.rd.outputs.body }}
+          BODYEOF
+          echo "----- BODY END -----"
