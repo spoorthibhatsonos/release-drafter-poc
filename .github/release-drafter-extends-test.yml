@@ -1,7 +1,7 @@
-# Test-only config. Points _extends at an arbitrary existing file in a
-# private Sonos-Inc repo (platform-core) purely to observe whether the
-# cross-repo fetch itself succeeds — the fetched content (a markdown
-# README) is NOT expected to be a valid release-drafter config, so a
-# YAML/schema error AFTER a successful fetch is the expected "it worked"
-# signal, distinct from a 404/403 auth error before any parsing happens.
-_extends: Sonos-Inc/platform-core:/README.md@main
+# Test-only config. Points _extends at a real .yml file that already exists
+# in a private Sonos-Inc repo (platform-core), purely to observe whether the
+# cross-repo fetch itself succeeds. The fetched content is a GitHub Action
+# definition (action.yml), not a valid release-drafter config, so a
+# YAML-parsed-but-schema-invalid error is the expected "fetch worked" signal,
+# distinct from a 404/403 auth error before any content is retrieved.
+_extends: Sonos-Inc/platform-core:/actions/promote-release-to-latest/action.yml@main
