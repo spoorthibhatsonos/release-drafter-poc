@@ -1,0 +1,70 @@
+name: Test whether publishing an OLD already-published release resets latest
+
+# Publishes release A, then release B (newer), confirming B is latest.
+# Then tries to re-run release-drafter's publish:true against A's tag again
+# (the OLD, already-published one) to see what happens to `latest`.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Publish release A (older)
+        uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9
+        with:
+          config-name: release-drafter-category-test.yml
+          publish: true
+          tag: order-test-a-${{ github.run_id }}
+          version: 0.0.3
+          name: "Order Test A"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check latest after A
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "after A: $(gh release view --repo ${{ github.repository }} --json tagName --jq .tagName)"
+
+      - name: Publish release B (newer)
+        uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9
+        with:
+          config-name: release-drafter-category-test.yml
+          publish: true
+          tag: order-test-b-${{ github.run_id }}
+          version: 0.0.4
+          name: "Order Test B"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check latest after B (expect B)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: echo "after B: $(gh release view --repo ${{ github.repository }} --json tagName --jq .tagName)"
+
+      - name: Re-run publish:true against A again (the OLD, already-published tag)
+        id: republish_a
+        continue-on-error: true
+        uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9
+        with:
+          config-name: release-drafter-category-test.yml
+          publish: true
+          tag: order-test-a-${{ github.run_id }}
+          version: 0.0.3
+          name: "Order Test A"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Check latest after re-publishing A (the interesting result)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "republish A outcome: ${{ steps.republish_a.outcome }}"
+          echo "after re-publishing A: $(gh release view --repo ${{ github.repository }} --json tagName --jq .tagName)"
