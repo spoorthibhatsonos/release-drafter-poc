@@ -1,0 +1,66 @@
+name: Test footer on actual publish (not dry-run)
+
+# Manual, isolated test. Actually publishes a throwaway release on each SHA,
+# with a distinctive footer, then reads back the REAL persisted body from
+# GitHub (not the action's computed `body` output) to check whether footer
+# survives an actual publish: true write, not just dry-run computation.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  publish-v7-7-0:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Publish throwaway release (v7.7.0 SHA)
+        uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9 # v7.7.0
+        with:
+          config-name: release-drafter-category-test.yml
+          publish: true
+          tag: footer-test-v770-${{ github.run_id }}
+          version: 0.0.1
+          name: "Footer Publish Test (v7.7.0 SHA)"
+          footer: "TEST-FOOTER-MARKER-abc123"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read back the REAL persisted body from GitHub
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "----- PERSISTED BODY (v7.7.0 SHA) -----"
+          gh release view "footer-test-v770-${{ github.run_id }}" --repo ${{ github.repository }} --json body --jq '.body'
+          echo "----- END -----"
+
+  publish-clovis-sha:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Publish throwaway release (Clovis-flagged SHA)
+        uses: release-drafter/release-drafter@f259c0ada5376557cd49e74487398301fab5287a
+        with:
+          config-name: release-drafter-category-test.yml
+          publish: true
+          tag: footer-test-clovis-${{ github.run_id }}
+          version: 0.0.1
+          name: "Footer Publish Test (Clovis SHA)"
+          footer: "TEST-FOOTER-MARKER-abc123"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read back the REAL persisted body from GitHub
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "----- PERSISTED BODY (Clovis SHA) -----"
+          gh release view "footer-test-clovis-${{ github.run_id }}" --repo ${{ github.repository }} --json body --jq '.body'
+          echo "----- END -----"
