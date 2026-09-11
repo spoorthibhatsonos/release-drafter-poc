@@ -1,0 +1,64 @@
+name: Test footer input across release-drafter versions
+
+# Manual, isolated test. Runs release-drafter twice, in dry-run mode, once
+# on the SHA we've been pinning (tagged v7.7.0) and once on the SHA Clovis
+# flagged as the first one where footer actually works, with an identical
+# distinctive footer marker on both. Checks whether the marker shows up in
+# the rendered body for each.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  test-v7-7-0:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run release-drafter (v7.7.0 SHA)
+        id: rd
+        uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9 # v7.7.0
+        with:
+          config-name: release-drafter-category-test.yml
+          dry-run: true
+          footer: "TEST-FOOTER-MARKER-abc123"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Report
+        run: |
+          echo "----- BODY (v7.7.0 SHA) -----"
+          cat << 'BODYEOF'
+          ${{ steps.rd.outputs.body }}
+          BODYEOF
+          echo "----- END -----"
+
+  test-clovis-sha:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run release-drafter (Clovis-flagged SHA)
+        id: rd
+        uses: release-drafter/release-drafter@f259c0ada5376557cd49e74487398301fab5287a
+        with:
+          config-name: release-drafter-category-test.yml
+          dry-run: true
+          footer: "TEST-FOOTER-MARKER-abc123"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Report
+        run: |
+          echo "----- BODY (Clovis SHA) -----"
+          cat << 'BODYEOF'
+          ${{ steps.rd.outputs.body }}
+          BODYEOF
+          echo "----- END -----"
