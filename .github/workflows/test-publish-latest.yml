@@ -1,0 +1,43 @@
+name: Test whether publish:true alone sets latest
+
+# Manual, isolated test. Publishes a throwaway release via publish:true with
+# no explicit `latest:` input, then checks whether GitHub's own "current
+# latest release" (via the bare, no-tag `gh release view`) resolves to this
+# new tag, or to whatever was latest before.
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: What is latest BEFORE this test
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "latest before: $(gh release view --repo ${{ github.repository }} --json tagName --jq .tagName)"
+
+      - name: Publish throwaway release, publish:true, no explicit latest input
+        uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9 # v7.7.0
+        with:
+          config-name: release-drafter-category-test.yml
+          publish: true
+          tag: latest-flag-test-${{ github.run_id }}
+          version: 0.0.2
+          name: "Latest Flag Test"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: What is latest AFTER this test
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "latest after: $(gh release view --repo ${{ github.repository }} --json tagName --jq .tagName)"
+          echo "expected our new tag if publish:true alone sets latest: latest-flag-test-${{ github.run_id }}"
