@@ -1,7 +1,8 @@
 name: Check whether republishing an old release resets latest (v2, split jobs)
 
 on:
-  workflow_dispatch: {}
+  push:
+    branches: [test-republish-latest]
 
 permissions:
   contents: write
