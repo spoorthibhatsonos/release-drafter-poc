@@ -1,0 +1,73 @@
+name: Check whether republishing an old release resets latest (fixed)
+
+on:
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  publish-a:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9
+        with:
+          config-name: release-drafter-category-test.yml
+          publish: true
+          tag: order-test-a-${{ github.run_id }}
+          version: 0.0.3
+          name: "Order Test A"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "after A: $(gh release view --repo ${{ github.repository }} --json tagName --jq .tagName)"
+
+  publish-b:
+    needs: publish-a
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9
+        with:
+          config-name: release-drafter-category-test.yml
+          publish: true
+          tag: order-test-b-${{ github.run_id }}
+          version: 0.0.4
+          name: "Order Test B"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "after B (expect B): $(gh release view --repo ${{ github.repository }} --json tagName --jq .tagName)"
+
+  republish-a:
+    needs: publish-b
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: republish_a
+        continue-on-error: true
+        uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9
+        with:
+          config-name: release-drafter-category-test.yml
+          publish: true
+          tag: order-test-a-${{ github.run_id }}
+          version: 0.0.3
+          name: "Order Test A"
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "republish A outcome: ${{ steps.republish_a.outcome }}"
+          echo "after re-publishing A (the interesting result): $(gh release view --repo ${{ github.repository }} --json tagName --jq .tagName)"
