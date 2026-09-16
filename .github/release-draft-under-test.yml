@@ -7,16 +7,20 @@ tag-template: "$RESOLVED_VERSION"
 
 categories:
   - title: "🚀 Features"
-    labels: ["feature", "enhancement"]
+    when:
+      labels: ["feature", "enhancement"]
     exclusive: true
   - title: "🐛 Bug Fixes"
-    labels: ["bug", "fix"]
+    when:
+      labels: ["bug", "fix"]
     exclusive: true
   - title: "🧰 Maintenance"
-    labels: ["maintenance", "chore"]
+    when:
+      labels: ["maintenance", "chore"]
     exclusive: true
   - title: "📦 Dependencies"
-    labels: ["dependencies"]
+    when:
+      labels: ["dependencies"]
     exclusive: true
 
 change-template: "- $TITLE (#$NUMBER, @$AUTHOR)"
