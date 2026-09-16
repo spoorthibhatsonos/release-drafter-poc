@@ -1,0 +1,11 @@
+name: Test cross-org access to platform-core actions
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: sonos-inc/platform-core/actions/read-repo-metadata@read-repo-metadata-v0
+        continue-on-error: true
