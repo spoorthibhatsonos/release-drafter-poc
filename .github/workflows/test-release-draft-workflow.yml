@@ -1,9 +1,11 @@
 name: Test release-draft.yml's Update draft release step
 
 # Copies workflow.yml's "Update draft release" step verbatim, minus read-repo-metadata
-# and `name:` -- those need sonos-inc/platform-core access, which we confirmed a personal
-# repo can't reach via uses: (separate, already-settled test). Everything else (version/
-# tag/commitish wiring, the real canonical config's categories/template) is tested as-is.
+# itself -- that needs sonos-inc/platform-core access, which we confirmed a personal repo
+# can't reach via uses: (separate, already-settled test). `name:` is still exercised below,
+# with "Cloud Settings" hardcoded in place of read-repo-metadata's service-friendly-name
+# output, so the name-templating path doesn't go untested just because its real input
+# source is unreachable here.
 on:
   workflow_dispatch:
     inputs:
@@ -33,6 +35,7 @@ jobs:
           config-name: release-draft-under-test.yml
           version: ${{ inputs.version }}
           tag: ${{ inputs.version }}
+          name: "Cloud Settings ${{ inputs.version }}"
           commitish: ${{ inputs.commitish }}
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
