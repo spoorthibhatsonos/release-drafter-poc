@@ -1,0 +1,41 @@
+name: Test deploy-time publish of an older/different tag
+
+# Simulates the deploy job's "Publish release body with rollout status" step: calls
+# release-drafter directly with an explicit tag/version/commitish that does NOT match
+# whatever the currently-open draft is labeled as. Checking whether this creates a
+# separate, new release object (leaving the current draft untouched) or grabs/relabels
+# the current draft regardless of the tag passed.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        required: true
+        type: string
+      commitish:
+        required: false
+        type: string
+        default: "main"
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Publish release body (deploy-time simulation)
+        uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9 # v7.7.0
+        with:
+          config-name: release-draft-under-test.yml
+          publish: true
+          version: ${{ inputs.version }}
+          tag: ${{ inputs.version }}
+          commitish: ${{ inputs.commitish }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
