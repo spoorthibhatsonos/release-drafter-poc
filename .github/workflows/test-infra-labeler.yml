@@ -1,0 +1,51 @@
+name: Test infra label (SWPBL-274503)
+
+# Validates the load-bearing check from the SWPBL-274503 design: can the labeler read a
+# PR's changed-file list and correctly compute "all changed files under terraform/"?
+# infra and a real category label are mutually exclusive -- whichever this PR should have,
+# the other gets removed.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Determine infra-only-ness and apply the label
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          FILES=$(gh api "repos/${REPO}/pulls/${PR_NUMBER}/files" --paginate --jq '.[].filename')
+          echo "Changed files:"
+          echo "$FILES"
+
+          IS_INFRA=true
+          while IFS= read -r f; do
+            [ -z "$f" ] && continue
+            case "$f" in
+              terraform/*) ;;
+              *) IS_INFRA=false ;;
+            esac
+          done <<< "$FILES"
+
+          echo "is_infra=$IS_INFRA"
+
+          if [ "$IS_INFRA" = "true" ]; then
+            echo "-> infra-only PR. Applying 'infra', removing any category label."
+            gh api "repos/${REPO}/issues/${PR_NUMBER}/labels" -f "labels[]=infra" > /dev/null
+            for label in feature enhancement bug fix maintenance chore dependencies; do
+              gh api "repos/${REPO}/issues/${PR_NUMBER}/labels/${label}" --method DELETE 2>/dev/null || true
+            done
+          else
+            echo "-> code-only or mixed PR. Removing 'infra' if present, applying 'feature' (stub category for this test)."
+            gh api "repos/${REPO}/issues/${PR_NUMBER}/labels/infra" --method DELETE 2>/dev/null || true
+            gh api "repos/${REPO}/issues/${PR_NUMBER}/labels" -f "labels[]=feature" > /dev/null
+          fi

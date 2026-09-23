@@ -1,0 +1,33 @@
+# Same as release-draft-under-test.yml, plus exclude-labels: [infra] -- testing SWPBL-274503's
+# decision that infra-only PRs never show up in release notes.
+name-template: "$RESOLVED_VERSION"
+tag-template: "$RESOLVED_VERSION"
+
+exclude-labels:
+  - infra
+
+categories:
+  - title: "🚀 Features"
+    when:
+      labels: ["feature", "enhancement"]
+    exclusive: true
+  - title: "🐛 Bug Fixes"
+    when:
+      labels: ["bug", "fix"]
+    exclusive: true
+  - title: "🧰 Maintenance"
+    when:
+      labels: ["maintenance", "chore"]
+    exclusive: true
+  - title: "📦 Dependencies"
+    when:
+      labels: ["dependencies"]
+    exclusive: true
+
+change-template: "- $TITLE (#$NUMBER, @$AUTHOR)"
+commitish: "main"
+
+template: |
+  ## Changes since $PREVIOUS_TAG
+
+  $CHANGES
