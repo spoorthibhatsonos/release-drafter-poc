@@ -1,0 +1,38 @@
+name: Test job summary visibility while run is still in progress
+
+# Does GitHub render a job's $GITHUB_STEP_SUMMARY on the run's summary page as soon as
+# THAT job finishes, or only once the WHOLE RUN completes? job-a finishes fast and writes
+# a clearly-marked summary; job-b sleeps for several minutes afterward, keeping the overall
+# run "in progress" long after job-a is done. Check the run's summary page WHILE job-b is
+# still sleeping to see whether job-a's summary is already visible.
+
+on:
+  workflow_dispatch: {}
+
+jobs:
+  job-a-fake-terraform-apply:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Write a fake terraform-apply-style summary
+        run: |
+          {
+            echo "## Terraform Plan Summary (fake, for timing test)"
+            echo ""
+            echo '```'
+            echo "# aws_s3_bucket.test will be created"
+            echo "# aws_iam_role.foo will be updated in-place"
+            echo '```'
+            echo ""
+            echo "If you can see this WHILE job-b below is still sleeping, summaries render per-job, not just at the end of the whole run."
+          } >> "$GITHUB_STEP_SUMMARY"
+          echo "job-a done, summary written."
+
+  job-b-long-sleep:
+    needs: job-a-fake-terraform-apply
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sleep so the overall run stays in-progress
+        run: |
+          echo "Sleeping 4 minutes so the run stays 'in progress' well after job-a finished..."
+          sleep 240
+          echo "done sleeping"
