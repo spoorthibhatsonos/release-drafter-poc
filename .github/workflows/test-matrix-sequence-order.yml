@@ -1,0 +1,41 @@
+name: Test - Matrix Sequence Order (POC)
+
+# Tests the assumption SWPBL-268373's region loop design depends on: with
+# max-parallel:1 and fail-fast:true, does GitHub Actions run matrix legs in
+# strict array order, and does a failing leg actually cancel the ones after
+# it (not just the ones scheduled after it)?
+#
+# Leg 'c' is set to fail on purpose. Expect: a, b, c run in order (check the
+# run summary for strictly increasing timestamps), d and e show as
+# cancelled rather than running at all.
+
+on:
+  workflow_dispatch:
+
+jobs:
+  sequence:
+    strategy:
+      fail-fast: true
+      max-parallel: 1
+      matrix:
+        include:
+          - label: a
+            index: 0
+            should_fail: false
+          - label: b
+            index: 1
+            should_fail: false
+          - label: c
+            index: 2
+            should_fail: true
+          - label: d
+            index: 3
+            should_fail: false
+          - label: e
+            index: 4
+            should_fail: false
+    uses: ./.github/workflows/sequence-echo.yml
+    with:
+      label: ${{ matrix.label }}
+      index: ${{ matrix.index }}
+      should-fail: ${{ matrix.should_fail }}

@@ -1,0 +1,36 @@
+name: Sequence Echo (POC helper)
+
+on:
+  workflow_call:
+    inputs:
+      label:
+        description: 'Which matrix leg this is (e.g. a, b, c)'
+        required: true
+        type: string
+      index:
+        description: 'This leg''s position in the matrix array'
+        required: true
+        type: number
+      should-fail:
+        description: 'If true, this leg fails after logging'
+        required: false
+        type: boolean
+        default: false
+
+jobs:
+  echo:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Sleep then log label/index/timestamp
+        shell: bash
+        run: |
+          sleep 5
+          now=$(date -u +%Y-%m-%dT%H:%M:%S.%3NZ)
+          echo "leg=${{ inputs.label }} index=${{ inputs.index }} time=${now}"
+          echo "leg=${{ inputs.label }} index=${{ inputs.index }} time=${now}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Fail if requested
+        if: ${{ inputs.should-fail }}
+        run: |
+          echo "::error::leg ${{ inputs.label }} failing on purpose"
+          exit 1
