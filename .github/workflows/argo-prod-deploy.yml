@@ -45,7 +45,9 @@ jobs:
           REGION_INFO: ${{ inputs.fake-stage-region-info }}
         run: |
           echo "region-info=${REGION_INFO}" >> "$GITHUB_OUTPUT"
-          echo "regions=$(echo "$REGION_INFO" | jq -c 'keys')" >> "$GITHUB_OUTPUT"
+          # keys_unsorted, not keys -- plain `keys` sorts alphabetically, which would
+          # silently reorder regions (e.g. eu-west-1 before us-east-1).
+          echo "regions=$(echo "$REGION_INFO" | jq -c 'keys_unsorted')" >> "$GITHUB_OUTPUT"
 
   resolve-rollback-target:
     runs-on: ubuntu-latest

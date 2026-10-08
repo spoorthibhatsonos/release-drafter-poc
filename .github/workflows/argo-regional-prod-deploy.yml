@@ -88,6 +88,12 @@ jobs:
     outputs:
       newer-version: ${{ steps.check-newer.outputs.value }}
     steps:
+      # Local (./) actions need the repo checked out first -- unlike the real design's
+      # cross-repo action refs, which GitHub Actions downloads independently of checkout.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - name: Promote release to latest
         if: ${{ needs.pin-draft.result == 'success' }}
         uses: ./.github/actions/promote-release-to-latest
@@ -113,12 +119,6 @@ jobs:
           tag: ${{ inputs.version }}
           regions-status: ${{ steps.status.outputs.regions-status }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Checkout for tag lookup
-        if: ${{ needs.pin-draft.result == 'success' }}
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Check for a newer tag already published
         if: ${{ needs.pin-draft.result == 'success' }}
