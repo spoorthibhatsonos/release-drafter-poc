@@ -1,0 +1,144 @@
+name: Argo Prod Deploy (vendored for SWPBL-268373 testing)
+
+# Adapted from platform-core's workflows/argo-prod-deploy/workflow.yml for local testing:
+# - resolve-stage/resolve-rollback-target are hardcoded from workflow_dispatch inputs
+#   instead of calling argo-get-env-info (already a real, trusted building block --
+#   not what this test is checking). resolve-plan's own region-order/version/sha logic
+#   is unchanged.
+# - fail-at-region lets a run script which region (if any) the dummy deploy fails at,
+#   to test stop-on-failure and the rollout-status/publish decisions around it.
+# - provenance-gate runs against this repo's own git history for real.
+
+on:
+  workflow_dispatch:
+    inputs:
+      fake-stage-region-info:
+        description: 'JSON {region: {version, sha}}, standing in for argo-get-env-info(stage)'
+        type: string
+        default: '{"us-east-1":{"version":"1.0.0","sha":"17d81393cbb887efdac21eaccc6cb20da9ffba6c"},"eu-west-1":{"version":"1.0.0","sha":"17d81393cbb887efdac21eaccc6cb20da9ffba6c"}}'
+      fake-rollback-region-info:
+        description: 'JSON {region: {version, sha}}, standing in for argo-get-env-info(prod) -- logging only'
+        type: string
+        default: '{"us-east-1":{"version":"0.9.0","sha":"HEAD"},"eu-west-1":{"version":"0.9.0","sha":"HEAD"}}'
+      region-order:
+        description: 'JSON array of regions, in order. Empty = use the fake stage info''s own order.'
+        type: string
+        default: ""
+      fail-at-region:
+        description: 'Region the dummy deploy fails at, if any.'
+        type: string
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  resolve-stage:
+    runs-on: ubuntu-latest
+    outputs:
+      regions: ${{ steps.fake.outputs.regions }}
+      region-info: ${{ steps.fake.outputs.region-info }}
+    steps:
+      - id: fake
+        shell: bash
+        env:
+          REGION_INFO: ${{ inputs.fake-stage-region-info }}
+        run: |
+          echo "region-info=${REGION_INFO}" >> "$GITHUB_OUTPUT"
+          echo "regions=$(echo "$REGION_INFO" | jq -c 'keys')" >> "$GITHUB_OUTPUT"
+
+  resolve-rollback-target:
+    runs-on: ubuntu-latest
+    outputs:
+      region-info: ${{ inputs.fake-rollback-region-info }}
+    steps:
+      - run: echo "using fake rollback target as-is"
+
+  resolve-plan:
+    needs: [resolve-stage, resolve-rollback-target]
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.plan.outputs.version }}
+      sha: ${{ steps.plan.outputs.sha }}
+      region-order-matrix: ${{ steps.plan.outputs.region-order-matrix }}
+    steps:
+      - name: Log rollback target
+        shell: bash
+        env:
+          ROLLBACK_INFO: ${{ needs.resolve-rollback-target.outputs.region-info }}
+        run: |
+          {
+            echo "## Rollback target (current prod, per region)"
+            echo '```json'
+            echo "$ROLLBACK_INFO" | jq '.'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Resolve region order, version and sha
+        id: plan
+        shell: bash
+        env:
+          STAGE_REGIONS: ${{ needs.resolve-stage.outputs.regions }}
+          STAGE_REGION_INFO: ${{ needs.resolve-stage.outputs.region-info }}
+          REGION_ORDER_INPUT: ${{ inputs.region-order }}
+          FAIL_AT_REGION: ${{ inputs.fail-at-region }}
+        run: |
+          order="$STAGE_REGIONS"
+          if [ -n "$REGION_ORDER_INPUT" ]; then
+            order="$REGION_ORDER_INPUT"
+          fi
+
+          count=$(echo "$order" | jq 'length')
+          if [ "$count" -eq 0 ]; then
+            echo "::error::resolved region order is empty"
+            exit 1
+          fi
+
+          for region in $(echo "$order" | jq -r '.[]'); do
+            if ! echo "$STAGE_REGION_INFO" | jq -e --arg r "$region" 'has($r)' > /dev/null; then
+              echo "::error::region '$region' is not in stage's region-info"
+              exit 1
+            fi
+          done
+
+          first_region=$(echo "$order" | jq -r '.[0]')
+          version=$(echo "$STAGE_REGION_INFO" | jq -r --arg r "$first_region" '.[$r].version')
+          sha=$(echo "$STAGE_REGION_INFO" | jq -r --arg r "$first_region" '.[$r].sha')
+
+          inconsistent=$(echo "$STAGE_REGION_INFO" | jq --arg v "$version" --arg s "$sha" '[to_entries[] | select(.value.version != $v or .value.sha != $s)] | length')
+          if [ "$inconsistent" -gt 0 ]; then
+            echo "::warning::stage region-info is not consistent across regions; using ${first_region}'s version/sha (${version} / ${sha}) as canonical."
+          fi
+
+          # should_fail (underscore, not hyphen) -- matrix.should-fail would parse as
+          # subtraction in a GH Actions expression.
+          region_order_matrix=$(echo "$order" | jq -c --arg fail "$FAIL_AT_REGION" \
+            'to_entries | map({region: .value, index: .key, should_fail: (.value == $fail)})')
+
+          echo "version=${version}" >> "$GITHUB_OUTPUT"
+          echo "sha=${sha}" >> "$GITHUB_OUTPUT"
+          echo "region-order-matrix=${region_order_matrix}" >> "$GITHUB_OUTPUT"
+
+  provenance-gate:
+    needs: [resolve-plan]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/check-provenance
+        with:
+          sha: ${{ needs.resolve-plan.outputs.sha }}
+
+  deploy-regions:
+    needs: [provenance-gate, resolve-plan]
+    strategy:
+      fail-fast: true
+      max-parallel: 1
+      matrix:
+        include: ${{ fromJSON(needs.resolve-plan.outputs.region-order-matrix) }}
+    uses: ./.github/workflows/argo-regional-prod-deploy.yml
+    with:
+      version: ${{ needs.resolve-plan.outputs.version }}
+      sha: ${{ needs.resolve-plan.outputs.sha }}
+      region: ${{ matrix.region }}
+      index: ${{ matrix.index }}
+      should-fail: ${{ matrix.should_fail }}

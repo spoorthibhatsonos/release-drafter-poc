@@ -1,0 +1,45 @@
+name: Dummy Argo Deploy Test Java (stand-in for SWPBL-268373 testing)
+
+# Mimics argo-deploy-test-java just enough to test argo-regional-prod-deploy's own logic
+# against it: takes a region + version/sha, logs them, succeeds or fails on request.
+
+on:
+  workflow_call:
+    inputs:
+      region:
+        type: string
+        required: true
+      version:
+        type: string
+        required: true
+      sha:
+        type: string
+        required: true
+      should-fail:
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      final-state:
+        value: ${{ jobs.deploy.outputs.final-state }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    outputs:
+      final-state: ${{ steps.result.outputs.value }}
+    steps:
+      - name: "Pretend to deploy"
+        run: |
+          sleep 3
+          echo "deploying region=${{ inputs.region }} version=${{ inputs.version }} sha=${{ inputs.sha }}"
+
+      - name: Report result
+        id: result
+        run: |
+          if [ "${{ inputs.should-fail }}" = "true" ]; then
+            echo "value=failure" >> "$GITHUB_OUTPUT"
+            echo "::error::dummy deploy failing on purpose for region ${{ inputs.region }}"
+            exit 1
+          fi
+          echo "value=success" >> "$GITHUB_OUTPUT"

@@ -1,0 +1,44 @@
+name: Check Provenance
+description: Verifies that a given SHA is an ancestor of the default branch, guarding against promoting unmerged commits.
+
+inputs:
+  sha:
+    description: "Commit SHA deployed to stage (7–40 hex characters)"
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Validate SHA format
+      shell: bash
+      env:
+        STAGE_SHA: ${{ inputs.sha }}
+      run: |
+        if [[ ! "$STAGE_SHA" =~ ^[0-9a-fA-F]{7,40}$ ]]; then
+          echo "::error::sha must be a 7–40 character hex commit SHA"
+          exit 1
+        fi
+
+    - name: Fetch sufficient history
+      shell: bash
+      env:
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+      run: |
+        if [ "$(git rev-parse --is-shallow-repository)" = "true" ]; then
+          git fetch --no-tags --unshallow origin "$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
+        else
+          git fetch --no-tags origin "$DEFAULT_BRANCH:refs/remotes/origin/$DEFAULT_BRANCH"
+        fi
+
+    - name: Verify SHA provenance
+      shell: bash
+      env:
+        STAGE_SHA: ${{ inputs.sha }}
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch || 'main' }}
+      run: |
+        if git merge-base --is-ancestor "${STAGE_SHA}^{commit}" "refs/remotes/origin/$DEFAULT_BRANCH"; then
+          echo "Passed: $STAGE_SHA descends from $DEFAULT_BRANCH"
+        else
+          echo "::error::sha '$STAGE_SHA' is not an ancestor of $DEFAULT_BRANCH, could not be resolved, or does not exist. Blocking promotion."
+          exit 1
+        fi

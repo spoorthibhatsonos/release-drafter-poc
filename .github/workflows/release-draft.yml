@@ -1,0 +1,42 @@
+name: Release Draft (vendored for SWPBL-268373 testing)
+
+# Adapted from platform-core's workflows/release-draft/workflow.yml for local testing:
+# - No GitHub App token (POC has no App installed) -- uses the ambient GITHUB_TOKEN.
+# - No read-repo-metadata lookup -- release name is a simple literal instead of the
+#   friendly-name-derived one the real workflow builds.
+# Same input contract (version/commitish/service-name) and same commitish-pinning
+# behavior as the real workflow -- that's the part this test cares about.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+      commitish:
+        type: string
+        required: false
+        default: "main"
+      service-name:
+        type: string
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    concurrency:
+      group: release-draft-${{ github.repository }}-${{ inputs.version }}-${{ inputs.commitish }}
+      cancel-in-progress: true
+    steps:
+      - name: Update draft release
+        uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9 # v7.7.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          version: ${{ inputs.version }}
+          tag: ${{ inputs.version }}
+          name: "POC ${{ inputs.version }}"
+          commitish: ${{ inputs.commitish }}

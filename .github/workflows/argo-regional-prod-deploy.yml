@@ -1,0 +1,142 @@
+name: Argo Regional Prod Deploy (vendored for SWPBL-268373 testing)
+
+# Adapted from platform-core's workflows/argo-regional-prod-deploy/workflow.yml:
+# - deploy calls dummy-argo-deploy-test-java.yml instead of the real argo-deploy-test-java.
+# - pin-draft/redraft-if-newer call the local vendored release-draft.yml.
+# - finalize uses the local vendored promote-release-to-latest / update-region-rollout-status
+#   actions, with the ambient GITHUB_TOKEN instead of a minted GitHub App token (no App
+#   installed in this POC).
+# Everything else -- the index==0 publish decision, check-already-published, the
+# needs.*.result wiring -- is unchanged from the real workflow. That's what's under test.
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        type: string
+        required: true
+      sha:
+        type: string
+        required: true
+      region:
+        type: string
+        required: true
+      index:
+        type: number
+        required: true
+      should-fail:
+        type: boolean
+        required: false
+        default: false
+    outputs:
+      deploy-final-state:
+        value: ${{ jobs.deploy.outputs.final-state }}
+
+permissions:
+  contents: write
+
+jobs:
+  deploy:
+    uses: ./.github/workflows/dummy-argo-deploy-test-java.yml
+    with:
+      region: ${{ inputs.region }}
+      version: ${{ inputs.version }}
+      sha: ${{ inputs.sha }}
+      should-fail: ${{ inputs.should-fail }}
+
+  check-already-published:
+    if: ${{ inputs.index == 0 }}
+    runs-on: ubuntu-latest
+    outputs:
+      value: ${{ steps.check.outputs.value }}
+    steps:
+      - name: Check whether this tag is already published
+        id: check
+        uses: actions/github-script@v7
+        env:
+          TAG: ${{ inputs.version }}
+        with:
+          script: |
+            const tag = process.env.TAG;
+            try {
+              const { data } = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag,
+              });
+              core.setOutput("value", data.draft ? "false" : "true");
+            } catch (err) {
+              if (err.status === 404) {
+                core.setOutput("value", "false");
+              } else {
+                throw err;
+              }
+            }
+
+  pin-draft:
+    needs: [deploy, check-already-published]
+    if: ${{ !cancelled() && inputs.index == 0 && needs.deploy.result == 'success' && needs.check-already-published.outputs.value == 'false' }}
+    uses: ./.github/workflows/release-draft.yml
+    with:
+      version: ${{ inputs.version }}
+      commitish: ${{ inputs.sha }}
+
+  finalize:
+    needs: [deploy, pin-draft]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    outputs:
+      newer-version: ${{ steps.check-newer.outputs.value }}
+    steps:
+      - name: Promote release to latest
+        if: ${{ needs.pin-draft.result == 'success' }}
+        uses: ./.github/actions/promote-release-to-latest
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ inputs.version }}
+
+      - name: Build rollout status
+        id: status
+        shell: bash
+        env:
+          DEPLOY_RESULT: ${{ needs.deploy.result }}
+          REGION: ${{ inputs.region }}
+        run: |
+          status="failed"
+          if [ "$DEPLOY_RESULT" = "success" ]; then
+            status="complete"
+          fi
+          echo "regions-status=[{\"region\":\"${REGION}\",\"status\":\"${status}\"}]" >> "$GITHUB_OUTPUT"
+
+      - uses: ./.github/actions/update-region-rollout-status
+        with:
+          tag: ${{ inputs.version }}
+          regions-status: ${{ steps.status.outputs.regions-status }}
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Checkout for tag lookup
+        if: ${{ needs.pin-draft.result == 'success' }}
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check for a newer tag already published
+        if: ${{ needs.pin-draft.result == 'success' }}
+        id: check-newer
+        shell: bash
+        env:
+          CURRENT_VERSION: ${{ inputs.version }}
+        run: |
+          git fetch --tags --quiet
+          newer=$(git tag --list \
+            | sort -V \
+            | awk -v cur="$CURRENT_VERSION" 'found{print} $0==cur{found=1}' \
+            | tail -1)
+          echo "value=${newer}" >> "$GITHUB_OUTPUT"
+
+  redraft-if-newer:
+    needs: [finalize]
+    if: ${{ !cancelled() && needs.finalize.outputs.newer-version != '' }}
+    uses: ./.github/workflows/release-draft.yml
+    with:
+      version: ${{ needs.finalize.outputs.newer-version }}
