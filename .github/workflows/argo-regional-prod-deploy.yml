@@ -117,10 +117,22 @@ jobs:
           script: |
             const tag = process.env.TAG;
             const expected = process.env.EXPECTED_SHA;
-            const { data } = await github.rest.repos.getReleaseByTag({
+            const gql = await github.graphql(`
+              query($owner: String!, $repo: String!, $tag: String!) {
+                repository(owner: $owner, name: $repo) {
+                  release(tagName: $tag) { databaseId }
+                }
+              }
+            `, { owner: context.repo.owner, repo: context.repo.repo, tag });
+            const releaseId = gql.repository.release?.databaseId;
+            if (!releaseId) {
+              core.setFailed(`no release found for tag '${tag}'`);
+              return;
+            }
+            const { data } = await github.rest.repos.getRelease({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              tag,
+              release_id: releaseId,
             });
             if (data.target_commitish !== expected) {
               core.setFailed(`release ${tag} now points at ${data.target_commitish}, not the deployed sha ${expected} -- another draft update raced with this publish. Not promoting.`);
