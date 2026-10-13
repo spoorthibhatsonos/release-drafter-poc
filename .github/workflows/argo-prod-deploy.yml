@@ -112,9 +112,11 @@ jobs:
           version=$(echo "$STAGE_REGION_INFO" | jq -r --arg r "$first_region" '.[$r].version')
           sha=$(echo "$STAGE_REGION_INFO" | jq -r --arg r "$first_region" '.[$r].sha')
 
-          inconsistent=$(echo "$STAGE_REGION_INFO" | jq --arg v "$version" --arg s "$sha" '[to_entries[] | select(.value.version != $v or .value.sha != $s)] | length')
-          if [ "$inconsistent" -gt 0 ]; then
-            echo "::warning::stage region-info is not consistent across regions; using ${first_region}'s version/sha (${version} / ${sha}) as canonical."
+          # Every region being deployed must agree with the first; other stage regions are ignored.
+          mismatched=$(echo "$STAGE_REGION_INFO" | jq -r --argjson order "$order" --arg v "$version" --arg s "$sha" '[to_entries[] | select(.key | IN($order[])) | select(.value.version != $v or .value.sha != $s) | "\(.key) (\(.value.version) / \(.value.sha))"] | join(", ")')
+          if [ -n "$mismatched" ]; then
+            echo "::error::stage regions being deployed disagree on version/sha: ${first_region} is ${version} / ${sha}, but ${mismatched} differ. Fix stage or narrow region-order."
+            exit 1
           fi
 
           # should_fail (underscore, not hyphen) -- matrix.should-fail would parse as
