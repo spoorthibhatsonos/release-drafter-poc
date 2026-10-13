@@ -27,6 +27,11 @@ on:
         type: string
         required: false
         default: ""
+      break-verify:
+        description: 'POC-only: make the verify step fail, standing in for a real draft-update race'
+        type: boolean
+        required: false
+        default: false
       should-fail:
         type: boolean
         required: false
@@ -112,7 +117,7 @@ jobs:
         uses: actions/github-script@v7
         env:
           TAG: ${{ inputs.tag-prefix }}${{ inputs.version }}
-          EXPECTED_SHA: ${{ inputs.sha }}
+          EXPECTED_SHA: ${{ inputs.break-verify && 'deliberately-wrong-sha' || inputs.sha }}
         with:
           script: |
             const tag = process.env.TAG;
@@ -146,6 +151,7 @@ jobs:
           tag: ${{ inputs.tag-prefix }}${{ inputs.version }}
 
       - name: Build rollout status
+        if: ${{ !cancelled() && needs.deploy.result != 'skipped' }}
         id: status
         shell: bash
         env:
@@ -160,6 +166,7 @@ jobs:
           echo "regions-status=${regions_status}" >> "$GITHUB_OUTPUT"
 
       - uses: ./.github/actions/update-region-rollout-status
+        if: ${{ !cancelled() && needs.deploy.result != 'skipped' }}
         with:
           tag: ${{ inputs.tag-prefix }}${{ inputs.version }}
           regions-status: ${{ steps.status.outputs.regions-status }}

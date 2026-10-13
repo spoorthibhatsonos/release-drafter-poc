@@ -33,6 +33,10 @@ on:
         description: 'Prefix the release tags use ahead of the version (e.g. cloud-settings-)'
         type: string
         default: ""
+      break-verify:
+        description: 'POC-only: make every leg''s verify step fail'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -142,3 +146,4 @@ jobs:
       region: ${{ matrix.region }}
       tag-prefix: ${{ inputs.tag-prefix }}
       should-fail: ${{ matrix.should_fail }}
+      break-verify: ${{ inputs.break-verify }}
