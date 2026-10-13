@@ -6,8 +6,10 @@ name: Argo Regional Prod Deploy (vendored for SWPBL-268373 testing)
 # - finalize uses the local vendored promote-release-to-latest / update-region-rollout-status
 #   actions, with the ambient GITHUB_TOKEN instead of a minted GitHub App token (no App
 #   installed in this POC).
-# Everything else -- the index==0 publish decision, check-already-published, the
-# needs.*.result wiring -- is unchanged from the real workflow. That's what's under test.
+# - provenance-gate uses the local check-provenance action against this repo's own history.
+# Everything else -- the first-to-succeed publish decision (check-already-published alone),
+# the finalize verify step, the needs.*.result wiring -- is unchanged from the real
+# workflow. That's what's under test.
 
 on:
   workflow_call:
@@ -21,9 +23,10 @@ on:
       region:
         type: string
         required: true
-      index:
-        type: number
-        required: true
+      tag-prefix:
+        type: string
+        required: false
+        default: ""
       should-fail:
         type: boolean
         required: false
@@ -36,7 +39,16 @@ permissions:
   contents: write
 
 jobs:
+  provenance-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/check-provenance
+        with:
+          sha: ${{ inputs.sha }}
+
   deploy:
+    needs: [provenance-gate]
     uses: ./.github/workflows/dummy-argo-deploy-test-java.yml
     with:
       region: ${{ inputs.region }}
@@ -45,7 +57,8 @@ jobs:
       should-fail: ${{ inputs.should-fail }}
 
   check-already-published:
-    if: ${{ inputs.index == 0 }}
+    needs: [deploy]
+    if: ${{ !cancelled() && needs.deploy.result == 'success' }}
     runs-on: ubuntu-latest
     outputs:
       value: ${{ steps.check.outputs.value }}
@@ -54,7 +67,7 @@ jobs:
         id: check
         uses: actions/github-script@v7
         env:
-          TAG: ${{ inputs.version }}
+          TAG: ${{ inputs.tag-prefix }}${{ inputs.version }}
         with:
           script: |
             const tag = process.env.TAG;
@@ -75,10 +88,10 @@ jobs:
 
   pin-draft:
     needs: [deploy, check-already-published]
-    if: ${{ !cancelled() && inputs.index == 0 && needs.deploy.result == 'success' && needs.check-already-published.outputs.value == 'false' }}
+    if: ${{ !cancelled() && needs.deploy.result == 'success' && needs.check-already-published.outputs.value == 'false' }}
     uses: ./.github/workflows/release-draft.yml
     with:
-      version: ${{ inputs.version }}
+      version: ${{ inputs.tag-prefix }}${{ inputs.version }}
       commitish: ${{ inputs.sha }}
 
   finalize:
@@ -94,12 +107,31 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Verify the release still points at the deployed sha
+        if: ${{ needs.pin-draft.result == 'success' }}
+        uses: actions/github-script@v7
+        env:
+          TAG: ${{ inputs.tag-prefix }}${{ inputs.version }}
+          EXPECTED_SHA: ${{ inputs.sha }}
+        with:
+          script: |
+            const tag = process.env.TAG;
+            const expected = process.env.EXPECTED_SHA;
+            const { data } = await github.rest.repos.getReleaseByTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag,
+            });
+            if (data.target_commitish !== expected) {
+              core.setFailed(`release ${tag} now points at ${data.target_commitish}, not the deployed sha ${expected} -- another draft update raced with this publish. Not promoting.`);
+            }
+
       - name: Promote release to latest
         if: ${{ needs.pin-draft.result == 'success' }}
         uses: ./.github/actions/promote-release-to-latest
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          tag: ${{ inputs.version }}
+          tag: ${{ inputs.tag-prefix }}${{ inputs.version }}
 
       - name: Build rollout status
         id: status
@@ -112,31 +144,42 @@ jobs:
           if [ "$DEPLOY_RESULT" = "success" ]; then
             status="complete"
           fi
-          echo "regions-status=[{\"region\":\"${REGION}\",\"status\":\"${status}\"}]" >> "$GITHUB_OUTPUT"
+          regions_status=$(jq -cn --arg region "$REGION" --arg status "$status" '[{region: $region, status: $status}]')
+          echo "regions-status=${regions_status}" >> "$GITHUB_OUTPUT"
 
       - uses: ./.github/actions/update-region-rollout-status
         with:
-          tag: ${{ inputs.version }}
+          tag: ${{ inputs.tag-prefix }}${{ inputs.version }}
           regions-status: ${{ steps.status.outputs.regions-status }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Check for a newer tag already published
         if: ${{ needs.pin-draft.result == 'success' }}
         id: check-newer
-        shell: bash
+        uses: actions/github-script@v7
         env:
+          TAG_PREFIX: ${{ inputs.tag-prefix }}
           CURRENT_VERSION: ${{ inputs.version }}
-        run: |
-          git fetch --tags --quiet
-          newer=$(git tag --list \
-            | sort -V \
-            | awk -v cur="$CURRENT_VERSION" 'found{print} $0==cur{found=1}' \
-            | tail -1)
-          echo "value=${newer}" >> "$GITHUB_OUTPUT"
+        with:
+          script: |
+            const prefix = process.env.TAG_PREFIX;
+            const current = process.env.CURRENT_VERSION;
+            const refs = await github.paginate(github.rest.git.listMatchingRefs, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `tags/${prefix}`,
+              per_page: 100,
+            });
+            const versions = refs
+              .map((r) => r.ref.replace(/^refs\/tags\//, "").slice(prefix.length))
+              .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+            const idx = versions.indexOf(current);
+            const newer = idx !== -1 && idx < versions.length - 1 ? versions[versions.length - 1] : "";
+            core.setOutput("value", newer);
 
   redraft-if-newer:
     needs: [finalize]
     if: ${{ !cancelled() && needs.finalize.outputs.newer-version != '' }}
     uses: ./.github/workflows/release-draft.yml
     with:
-      version: ${{ needs.finalize.outputs.newer-version }}
+      version: ${{ inputs.tag-prefix }}${{ needs.finalize.outputs.newer-version }}

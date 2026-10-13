@@ -7,7 +7,8 @@ name: Argo Prod Deploy (vendored for SWPBL-268373 testing)
 #   is unchanged.
 # - fail-at-region lets a run script which region (if any) the dummy deploy fails at,
 #   to test stop-on-failure and the rollout-status/publish decisions around it.
-# - provenance-gate runs against this repo's own git history for real.
+# - provenance-gate runs per regional leg (not here), against this repo's own git history.
+# - tag-prefix is a dispatch input here, forwarded to every leg.
 
 on:
   workflow_dispatch:
@@ -26,6 +27,10 @@ on:
         default: ""
       fail-at-region:
         description: 'Region the dummy deploy fails at, if any.'
+        type: string
+        default: ""
+      tag-prefix:
+        description: 'Prefix the release tags use ahead of the version (e.g. cloud-settings-)'
         type: string
         default: ""
 
@@ -115,23 +120,14 @@ jobs:
           # should_fail (underscore, not hyphen) -- matrix.should-fail would parse as
           # subtraction in a GH Actions expression.
           region_order_matrix=$(echo "$order" | jq -c --arg fail "$FAIL_AT_REGION" \
-            'to_entries | map({region: .value, index: .key, should_fail: (.value == $fail)})')
+            'map({region: ., should_fail: (. == $fail)})')
 
           echo "version=${version}" >> "$GITHUB_OUTPUT"
           echo "sha=${sha}" >> "$GITHUB_OUTPUT"
           echo "region-order-matrix=${region_order_matrix}" >> "$GITHUB_OUTPUT"
 
-  provenance-gate:
-    needs: [resolve-plan]
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/check-provenance
-        with:
-          sha: ${{ needs.resolve-plan.outputs.sha }}
-
   deploy-regions:
-    needs: [provenance-gate, resolve-plan]
+    needs: [resolve-plan]
     strategy:
       fail-fast: true
       max-parallel: 1
@@ -142,5 +138,5 @@ jobs:
       version: ${{ needs.resolve-plan.outputs.version }}
       sha: ${{ needs.resolve-plan.outputs.sha }}
       region: ${{ matrix.region }}
-      index: ${{ matrix.index }}
+      tag-prefix: ${{ inputs.tag-prefix }}
       should-fail: ${{ matrix.should_fail }}
