@@ -1,0 +1,54 @@
+name: Test tag-prefix handling (mirrors platform-core release-draft tag-prefix change)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Bare version, e.g. 3.0.19"
+        required: true
+        type: string
+      tag-prefix:
+        required: false
+        type: string
+        default: ""
+      friendly-name:
+        required: false
+        type: string
+        default: "Hello Spring"
+      dry-run:
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+jobs:
+  draft:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0
+        with:
+          fetch-depth: 0
+
+      - name: Update draft release
+        id: drafter
+        uses: release-drafter/release-drafter@34d80673e067bdc0c24568d3af899c216adcfaa9 # v7.7.0
+        with:
+          config-name: release-draft-under-test.yml
+          version: ${{ inputs.version }}
+          tag: ${{ inputs.tag-prefix }}${{ inputs.version }}
+          name: "${{ inputs.friendly-name }} ${{ inputs.version }}"
+          commitish: main
+          dry-run: ${{ inputs.dry-run }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Show result
+        env:
+          NAME: ${{ steps.drafter.outputs.name }}
+          TAG: ${{ steps.drafter.outputs.tag_name }}
+        run: |
+          echo "name=[$NAME] tag=[$TAG]"
+          echo "RESULT name=[$NAME] tag=[$TAG]" >> "$GITHUB_STEP_SUMMARY"
